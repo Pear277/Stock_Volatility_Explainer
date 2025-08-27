@@ -122,15 +122,16 @@ if ticker_input:
             else:
                 badge = "🔴 Risky"
 
+            st.subheader("📉 Volatility Overview")
             st.markdown(f"**Volatility Level:** {badge} ({vol_level}%)")
+            st.caption("🟢 Stable < 2% | 🟠 Moderate 2–5% | 🔴 Risky > 5%")
 
             # --- VOLATILITY EXPLANATION ---
-            st.subheader("🧠 Volatility Explanation")
-            st.markdown(f"**Rolling Volatility (14-day):** {vol_level}%")
-
             if explanation:
                 cleaned_explanation = explanation.replace("\n", "\n\n").strip()
-                st.markdown(cleaned_explanation)
+                with st.expander("🧠 What does this volatility level mean?"):
+                    st.markdown(f"**Rolling Volatility (14-day):** {vol_level}%")
+                    st.markdown(cleaned_explanation)
             else:
                 st.warning("⚠️ No explanation generated. Please check your LLM setup.")
 
@@ -140,13 +141,13 @@ if ticker_input:
 
             # --- RECOMMENDATION ---
             if score >= min_score and sentiment_label != "Negative":
-                recommendation = "✅ Strong Buy"
+                recommendation = "Strong Buy"
                 signal_color = "green"
             elif score == min_score - 1:
-                recommendation = "👀 Watch"
+                recommendation = "Watch"
                 signal_color = "orange"
             else:
-                recommendation = "⚠️ Avoid for now"
+                recommendation = "Avoid for now"
                 signal_color = "gray"
 
             # --- SUMMARY ---
@@ -157,9 +158,6 @@ if ticker_input:
             st.markdown(f"**MACD:** {round(macd_val, 2)} | **Signal:** {round(signal_val, 2)}")
             st.markdown(f"**Volume:** {volume:,.0f} vs Avg {int(avg_volume):,}")
             st.markdown(f"**ATR:** {round(atr_val, 2)} → Stop-Loss: £{stop_loss}, Take-Profit: £{take_profit}")
-            # --- VOLATILITY EXPLANATION ---
-            st.subheader("🧠 Volatility Explanation")
-            st.markdown(explanation)
             st.markdown(f"**News Sentiment:** *{sentiment_label}* ({round(sentiment_score, 2)})")
             st.markdown(f"### Recommendation: <span style='color:{signal_color}; font-size:28px'>**{recommendation}**</span>", unsafe_allow_html=True)
 

@@ -114,6 +114,26 @@ if ticker_input:
             explainer = VolatilityExplainer(model_name="qwen2.5:7b")
             explanation = explainer.generate_explanation(vol_level)
 
+            # --- VOLATILITY BADGE ---
+            if vol_level < 2:
+                badge = "🟢 Stable"
+            elif vol_level < 5:
+                badge = "🟠 Moderate"
+            else:
+                badge = "🔴 Risky"
+
+            st.markdown(f"**Volatility Level:** {badge} ({vol_level}%)")
+
+            # --- VOLATILITY EXPLANATION ---
+            st.subheader("🧠 Volatility Explanation")
+            st.markdown(f"**Rolling Volatility (14-day):** {vol_level}%")
+
+            if explanation:
+                cleaned_explanation = explanation.replace("\n", "\n\n").strip()
+                st.markdown(cleaned_explanation)
+            else:
+                st.warning("⚠️ No explanation generated. Please check your LLM setup.")
+
 
             # --- NEWS SENTIMENT ---
             sentiment_label, sentiment_score = get_news_sentiment(ticker_input.upper())

@@ -11,6 +11,7 @@ def calculate_volatility (df, window=14):
 
 
 def forecast_volatility(df, periods=7):
+    df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)  # Remove timezone
     df = df[["Date", "Daily Return"]].dropna().rename(columns={"Date": "ds", "Daily Return": "y"})
     model = Prophet()
     model.fit(df)

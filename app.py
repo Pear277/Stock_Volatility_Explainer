@@ -28,6 +28,9 @@ rsi_buy = st.sidebar.slider("RSI Buy Threshold (oversold)", 0, 50, 30)
 macd_confidence = st.sidebar.slider("MACD Strength (above signal line)", 0.0, 5.0, 0.5)
 volume_boost = st.sidebar.slider("Volume Spike Factor", 1.0, 3.0, 1.5)
 min_score = st.sidebar.slider("Min Score for Buy", 1, 4, 3)
+education_mode = st.sidebar.radio("Explanation Style", ["Beginner", "Experienced"])
+investment_intent = st.sidebar.radio("Are you considering:", ["Buying", "Selling"])
+
 
 # --- NEWS SENTIMENT FUNCTION ---
 def get_news_sentiment(ticker_symbol):
@@ -98,6 +101,31 @@ if ticker_input:
             stop_loss = round(current_price - atr_val * 1.5, 2)
             take_profit = round(current_price + atr_val * 2, 2)
 
+            # --- LLM EXPLANATION ---
+            vol_level = round(hist["Rolling Volatility"].iloc[-1], 2)
+            explainer = VolatilityExplainer(model_name="qwen2.5:7b")
+
+            # --- VOLATILITY BADGE ---
+            if vol_level < 2:
+                badge = "🟢 Stable"
+            elif vol_level < 5:
+                badge = "🟠 Moderate"
+            else:
+                badge = "🔴 Risky"
+
+
+            trend_summary = (
+                f"Current price is £{round(current_price, 2)}, "
+                f"200-day MA is £{round(ma_200, 2)}, "
+                f"RSI is {round(rsi, 2)}, "
+                f"MACD is {round(macd_val, 2)} vs Signal {round(signal_val, 2)}, "
+                f"Volume is {volume:,.0f} vs Avg {int(avg_volume):,}. "
+                f"Volatility level is {vol_level:.2f}% ({badge})."
+            )
+
+            explanation = explainer.generate_explanation(vol_level, education_mode, trend_summary, investment_intent)
+
+
             # --- SCORING SYSTEM ---
             score = 0
             if current_price > ma_200:
@@ -109,18 +137,6 @@ if ticker_input:
             if volume > avg_volume * volume_boost:
                 score += 1
 
-            # --- LLM EXPLANATION ---
-            vol_level = round(hist["Rolling Volatility"].iloc[-1], 2)
-            explainer = VolatilityExplainer(model_name="qwen2.5:7b")
-            explanation = explainer.generate_explanation(vol_level)
-
-            # --- VOLATILITY BADGE ---
-            if vol_level < 2:
-                badge = "🟢 Stable"
-            elif vol_level < 5:
-                badge = "🟠 Moderate"
-            else:
-                badge = "🔴 Risky"
 
             st.subheader("📉 Volatility Overview")
             st.markdown(f"**Volatility Level:** {badge} ({vol_level}%)")
@@ -135,6 +151,16 @@ if ticker_input:
             else:
                 st.warning("⚠️ No explanation generated. Please check your LLM setup.")
 
+            if "Buy" in explanation:
+                action_label = "🟢 Buy"
+            elif "Sell" in explanation:
+                action_label = "🔴 Sell"
+            elif "Hold" in explanation:
+                action_label = "🟡 Hold"
+            else:
+                action_label = "⚠️ No clear action"
+
+            st.markdown(f"**LLM Action Recommendation:** {action_label}")
 
             # --- NEWS SENTIMENT ---
             sentiment_label, sentiment_score = get_news_sentiment(ticker_input.upper())
@@ -149,6 +175,23 @@ if ticker_input:
             else:
                 recommendation = "Avoid for now"
                 signal_color = "gray"
+
+            justification = []
+
+            if current_price < ma_200:
+                justification.append("Price is below the 200-day moving average.")
+            if macd_val < signal_val:
+                justification.append("MACD is below the signal line.")
+            if rsi > rsi_buy:
+                justification.append(f"RSI is above the buy threshold ({rsi_buy}).")
+            if volume < avg_volume * volume_boost:
+                justification.append("Volume is below spike threshold.")
+
+            if justification:
+                st.markdown("**Why this recommendation?**")
+                for reason in justification:
+                    st.markdown(f"- {reason}")
+
 
             # --- SUMMARY ---
             st.subheader(f"📊 Technical Summary for {ticker_input.upper()}")

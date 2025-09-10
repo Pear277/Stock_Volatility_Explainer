@@ -10,11 +10,15 @@ def calculate_volatility (df, window=14):
     return df
 
 
-def forecast_volatility(df, periods=7):
-    df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)  # Remove timezone
-    df = df[["Date", "Daily Return"]].dropna().rename(columns={"Date": "ds", "Daily Return": "y"})
+def forecast_volatility(df, horizon=7):
+    df = df.copy()
+    df["ds"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
+    df["y"] = df["Rolling Volatility"]
+
     model = Prophet()
-    model.fit(df)
-    future = model.make_future_dataframe(periods=periods)
+    model.fit(df[["ds", "y"]])
+
+    future = model.make_future_dataframe(periods=horizon)
     forecast = model.predict(future)
-    return forecast
+
+    return forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]]

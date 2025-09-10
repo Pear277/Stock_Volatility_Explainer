@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import ta
+import re
 from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import AverageTrueRange
@@ -28,8 +29,10 @@ rsi_buy = st.sidebar.slider("RSI Buy Threshold (oversold)", 0, 50, 30)
 macd_confidence = st.sidebar.slider("MACD Strength (above signal line)", 0.0, 5.0, 0.5)
 volume_boost = st.sidebar.slider("Volume Spike Factor", 1.0, 3.0, 1.5)
 min_score = st.sidebar.slider("Min Score for Buy", 1, 4, 3)
+vol_window = st.sidebar.slider("Volatility Window (days)", min_value=5, max_value=60, value=14)
 education_mode = st.sidebar.radio("Explanation Style", ["Beginner", "Experienced"])
 investment_intent = st.sidebar.radio("Are you considering:", ["Buying", "Selling"])
+investment_horizon = st.sidebar.radio("Investment Horizon", ["Short-Term", "Long-Term", "Both"])
 
 
 # --- NEWS SENTIMENT FUNCTION ---
@@ -66,10 +69,10 @@ if ticker_input:
 
 
             # --- VOLATILITY METRICS ---
-            hist = calculate_volatility(hist)
+            hist = calculate_volatility(hist, window=vol_window)
 
             # --- VOLATILITY FORECAST ---
-            forecast = forecast_volatility(hist)
+            forecast = forecast_volatility(hist, horizon=vol_window)
 
             # --- INDICATORS ---
             hist["RSI"] = RSIIndicator(close=hist["Close"]).rsi()
@@ -123,7 +126,6 @@ if ticker_input:
                 f"Volatility level is {vol_level:.2f}% ({badge})."
             )
 
-            explanation = explainer.generate_explanation(vol_level, education_mode, trend_summary, investment_intent)
 
 
             # --- SCORING SYSTEM ---
@@ -139,42 +141,91 @@ if ticker_input:
 
 
             st.subheader("📉 Volatility Overview")
-            st.markdown(f"**Volatility Level:** {badge} ({vol_level}%)")
+            st.markdown(f"**Rolling Volatility ({vol_window}-day):** {vol_level}%")
             st.caption("🟢 Stable < 2% | 🟠 Moderate 2–5% | 🔴 Risky > 5%")
 
-            # --- VOLATILITY EXPLANATION ---
-            if explanation:
-                cleaned_explanation = explanation.replace("\n", "\n\n").strip()
-                with st.expander("🧠 What does this volatility level mean?"):
-                    st.markdown(f"**Rolling Volatility (14-day):** {vol_level}%")
-                    st.markdown(cleaned_explanation)
-            else:
-                st.warning("⚠️ No explanation generated. Please check your LLM setup.")
-
-            if "Buy" in explanation:
-                action_label = "🟢 Buy"
-            elif "Sell" in explanation:
-                action_label = "🔴 Sell"
-            elif "Hold" in explanation:
-                action_label = "🟡 Hold"
-            else:
-                action_label = "⚠️ No clear action"
-
-            st.markdown(f"**LLM Action Recommendation:** {action_label}")
-
+           
             # --- NEWS SENTIMENT ---
             sentiment_label, sentiment_score = get_news_sentiment(ticker_input.upper())
 
-            # --- RECOMMENDATION ---
-            if score >= min_score and sentiment_label != "Negative":
-                recommendation = "Strong Buy"
-                signal_color = "green"
-            elif score == min_score - 1:
-                recommendation = "Watch"
-                signal_color = "orange"
+            # --- RECOMMENDATION SUMMARY FOR LLM ---
+            recommendation_summary = (
+                f"Score: {score} (Min required: {min_score})\n"
+                f"Sentiment: {sentiment_label}\n"
+                f"Price vs 200-day MA: {'Below' if current_price < ma_200 else 'Above'}\n"
+                f"MACD vs Signal: {'Below' if macd_val < signal_val else 'Above'}\n"
+                f"RSI: {rsi:.2f} (Buy threshold: {rsi_buy})\n"
+                f"Volume: {volume:,.0f} vs Avg {int(avg_volume):,}"
+            )
+
+            indicator_summary = (
+                f"Volatility Level: {vol_level:.2f}% ({badge}) over a {vol_window}-day window\n"
+                f"Price: £{round(current_price, 2)} vs 200-day MA: £{round(ma_200, 2)}\n"
+                f"RSI: {rsi:.2f} (Buy threshold: {rsi_buy})\n"
+                f"MACD: {macd_val:.2f} vs Signal: {signal_val:.2f}\n"
+                f"Volume: {volume:,.0f} vs Avg: {int(avg_volume):,}\n"
+                f"News Sentiment: {sentiment_label} ({round(sentiment_score, 2)})"
+            )
+
+
+            explanation = explainer.generate_explanation(
+                vol_level,
+                education_mode,
+                trend_summary,
+                investment_intent,
+                indicator_summary,
+                investment_horizon,
+                vol_window
+            )
+
+            short_term_action = "⚠️ Not specified"
+            long_term_action = "⚠️ Not specified"
+
+            for line in explanation.splitlines():
+                if line.lower().startswith("short-term action:"):
+                    action = line.split(":")[1].strip().lower()
+                    if action == "buy":
+                        short_term_action = "🟢 Buy"
+                    elif action == "sell":
+                        short_term_action = "🔴 Sell"
+                    elif action == "hold":
+                        short_term_action = "🟡 Hold"
+                elif line.lower().startswith("long-term action:"):
+                    action = line.split(":")[1].strip().lower()
+                    if action == "buy":
+                        long_term_action = "🟢 Buy"
+                    elif action == "sell":
+                        long_term_action = "🔴 Sell"
+                    elif action == "hold":
+                        long_term_action = "🟡 Hold"
+
+
+
+
+            if explanation:
+                cleaned_explanation = explanation.replace("\n", "\n\n").strip()
+                with st.expander("🧠 LLM Recommendation & Rationale"):
+                    cleaned_explanation = explanation.replace("\n", "\n\n").strip()
+                    st.markdown(cleaned_explanation)
+                    st.markdown("### 📝 Final Recommendation Summary")
+
+                    summary_lines = []
+
+                    if investment_horizon in ["Short-Term", "Both"]:
+                        summary_lines.append("For short-term investors, the recommendation suggests a tactical approach based on current momentum and volatility. Consider acting only if key indicators like RSI and MACD confirm a clear trend.")
+
+                    if investment_horizon in ["Long-Term", "Both"]:
+                        summary_lines.append("For long-term investors, the recommendation leans toward strategic positioning. Monitor price relative to the 200-day MA and overall sentiment before committing to a buy-and-hold strategy.")
+
+                    st.markdown("\n\n".join(summary_lines))
+
+                    st.caption("📊 This recommendation reflects current technical indicators and sentiment. Always consider your own risk tolerance and investment horizon.")
+
+
             else:
-                recommendation = "Avoid for now"
-                signal_color = "gray"
+                st.warning("⚠️ No explanation generated. Please check your LLM setup.")
+
+
 
             justification = []
 
@@ -202,7 +253,7 @@ if ticker_input:
             st.markdown(f"**Volume:** {volume:,.0f} vs Avg {int(avg_volume):,}")
             st.markdown(f"**ATR:** {round(atr_val, 2)} → Stop-Loss: £{stop_loss}, Take-Profit: £{take_profit}")
             st.markdown(f"**News Sentiment:** *{sentiment_label}* ({round(sentiment_score, 2)})")
-            st.markdown(f"### Recommendation: <span style='color:{signal_color}; font-size:28px'>**{recommendation}**</span>", unsafe_allow_html=True)
+    
 
             # --- FUNDAMENTALS ---
             st.subheader("📉 Fundamentals")
@@ -251,7 +302,14 @@ if ticker_input:
                 st.markdown(f"**Win Rate:** {win_rate}%")
             else:
                 st.info("⚠️ No historical setups matched current strategy criteria for backtesting.")
+                st.markdown("""
+                This may be due to:
+                - Strict thresholds (e.g., RSI too low, MACD not crossing signal)
+                - Limited historical data range
+                - Market conditions that didn’t align with your strategy
 
+                Try adjusting the RSI, MACD, or volume sliders to explore alternative setups.
+                """)
             # --- EXPLAINER ---
             with st.expander("❓ What do these indicators mean?"):
                 st.markdown("""
